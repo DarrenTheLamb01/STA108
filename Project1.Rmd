@@ -1,0 +1,125 @@
+---
+title: "STA 108 Project 1"
+author: "Darren Lam and Andy Kim"
+date: "2024-10-23"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE, fig.align =
+"center", fig.width = 10)
+options(scipen = 999) #Remove the scientific notation
+
+# Load libraries
+library(ggplot2)
+
+# Import the dataset
+Senic <- read.csv("SENIC.csv")
+
+```
+
+```{r Part 2, echo=FALSE}
+# Summary stats for each variable
+summary(Senic$length)
+summary(Senic$infection)
+summary(Senic$facility)
+summary(Senic$Xray)
+
+```
+
+```{r Part 3, echo=FALSE}
+# Scatter Plot of Infection vs. Length
+ggplot(data = Senic, mapping = aes(x = infection, y = length)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(title = "Scatter Plot of Infection Probability vs. Length of Hospital Stay",
+       x = "Probability of Acquiring Infection (%)",
+       y = "Length of Hospital Stay (Days)")
+
+# Summary Table and Model of Infection vs. Length
+infection_model <- lm(length ~ infection, data = Senic)
+summary(infection_model)
+
+# Scatter Plot of Facility vs. Length
+ggplot(data = Senic, mapping = aes(x = facility, y = length)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(title = "Scatter Plot of Facilities and Services Provided vs. Length of Hospital Stay",
+       x = "% of 35 Potential Facilities and Services Provided",
+       y = "Length of Hospital Stay (Days)")
+
+# Summary Table and Model of Facility vs. Length
+facility_model<- lm(length ~ facility, data = Senic)
+summary(facility_model)
+
+# Scatter Plot of Xray vs. Length
+ggplot(data = Senic, mapping = aes(x = Xray, y = length)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(title = "Scatter Plot of X-ray Ratio vs. Length of Hospital Stay",
+       x = "Ratio of X-rays Performed to # of Patients Without Signs of Pneumonia",
+       y = "Length of Hospital Stay (Days)")
+
+# Summary Table and Model of Xray vs. Length
+Xray_model <- lm(length ~ Xray, data = Senic)
+summary(Xray_model)
+
+```
+
+```{r Part 4, echo=FALSE}
+# Residual plot
+ggplot(data = infection_model, mapping = aes(x = .fitted, y = .resid)) +
+  geom_point() +
+  geom_hline(yintercept = 0) +
+  labs(title = "Plot of Residuals for Infection Probability vs. Length of Hospital Stay",
+       x = "Probability of Acquiring Infection (%)",
+       y = "Residuals")
+
+# Histogram of residuals
+ggplot(data = infection_model, mapping = aes(x = .resid)) +
+  geom_histogram() +
+  labs(title = "Histogram of Residuals for Infection Probability vs. Length of Hospital Stay",
+       x = "Residuals",
+       y = "Frequency")
+
+# QQ plot
+ggplot(data = infection_model, mapping = aes(sample = .resid)) +
+  stat_qq() +
+  stat_qq_line() +
+  labs(title = "Normal QQ plot for Infection Probability vs. Length of Hospital Stay",
+       x = "Theoretical Quantities",
+       y = "Sample Quanitities")
+
+```
+
+Our final simple linear regression model used the infection probability as a predictor to explain the length of hospital stays with the highest degree of fit. The Shapiro-Wilks test (for normality) and the Fligner-Killeen test (for constant variance) were used for the analysis portion of the report. For the Shapiro-wilks test the null hypothesis was that the population is normally distributed. The alternative hypothesis was that the population was not normally distributed. The p-value was 0.00000001699 which is less than the alpha of 0.05 so we rejected the null hypothesis and concluded that the population is not normally distributed. For the Fligner-Killeen test, the null hypothesis was that the population has a constant variance. The alternative hypothesis was that the population did not have a constant variance. The p-value was 0.2543 which is greater than the alpha of 0.05 so we had no evidence to reject the null hypothesis and concluded that the model suggests that the population has a constant variance. These contradictions could be a result of the outliers in the data. R squared is rounded to 0.285 so the model explains 28.5% of the variation in the length of stay. 
+
+
+```{r Part 5, echo=FALSE}
+# Confidence Interval for slope
+confint(infection_model)[2, ]
+
+# Shapiro-wilks test (for normality)
+shapiro.test(infection_model$residuals)
+
+# Fligner-killeen test (for constant variance)
+groups <- rep("Lower", nrow(Senic))
+groups[Senic$infection > median(Senic$infection)] = "Upper"
+groups <- as.factor(groups)
+Senic$group <- groups
+fligner.test(infection_model$residuals, Senic$group)
+
+```
+
+```{r Part 7, echo=FALSE}
+# Predictions
+predict(infection_model, newdata = data.frame(infection = 5.2), interval = "confidence")
+predict(infection_model, newdata = data.frame(infection = 4.4), interval = "prediction")
+predict(infection_model, newdata = data.frame(infection = 3.7), interval = "confidence")
+
+```
+
+# R Appendix
+```{r, ref.label=knitr::all_labels(), eval = F, echo = T}
+tinytex::install_tinytex()
+```

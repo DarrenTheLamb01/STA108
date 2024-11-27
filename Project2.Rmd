@@ -1,0 +1,357 @@
+---
+title: "Project2.STA108"
+author: "Darren"
+date: "`r Sys.Date()`"
+output:
+  pdf_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+# Setup
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE, fig.align =
+"center", fig.width = 10)
+options(scipen = 999) #Remove the scientific notation
+
+# Load libraries
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+library(car)
+library(ggcorrplot)
+library(MASS)
+
+# Import the dataset
+senic <- read.csv("SENIC2.csv")
+```
+
+I. Introduction: A small introduction about the goal, what data you use, and what
+model you use.
+
+```{r Miscellaneous, echo=FALSE}
+# Miscellaneous
+# Rename columns appropriate variable names
+names(senic) = c("Y", paste0("X", rep(1:10)))
+
+# Convert categorical variables to factors
+senic <- senic %>%
+  mutate(X6 = as.factor(X6))
+senic <- senic %>%
+  mutate(X7 = as.factor(X7))
+
+# Reshape data for Exploratory Data Analysis
+senic_long <- senic %>%
+  pivot_longer(
+    cols = -c(Y, X6, X7),
+    names_to = "numerical_explanatory_variables",
+    values_to = "numerical_values"
+  ) %>%
+  pivot_longer(
+    cols = c(X6, X7),
+    names_to = "categorical_explanatory_variables",
+    values_to = "categorical_values"
+  )
+
+# Custom labels for clarity
+custom_labels <- c(
+  "Y" = "Length of Stay (days)",
+  "X1" = "Patient Age (years)",
+  "X2" = "Infection Risk (%)",
+  "X3" = "Routine Culturing Ratio",
+  "X4" = "Routine Chest X-ray Ratio",
+  "X5" = "Number of Beds",
+  "X6" = "Medical School Affiliation (y/n)",
+  "X7" = "Geographic Region (ne, nc, s, w)",
+  "X8" = "Daily Census",
+  "X9" = "Number of Nurses",
+  "X10" = "Available Facilities and Services (%)"
+)
+
+```
+
+II. Exploratory Data Analysis: Summarize the main characteristics of the dataset
+that relate to your goal. This should include summary plots describing the
+relationship between your explanatory variables and the response variable, and
+numerical summaries you find interesting.
+
+```{r Exploratory Data Analysis, echo=FALSE}
+# II. Exploratory Data Analysis
+# Create histogram to show distribution of response variable
+senic %>%
+  ggplot(mapping = aes(x = Y)) +
+  geom_histogram() +
+  labs(title = "Histogram of Length of Stay",
+       x = "Length of Stay (days)",
+       y = "Frequency"
+       )
+
+# Create bar charts for each categorical variable
+senic %>%
+  ggplot(mapping = aes(x = X6)) +
+  geom_bar() +
+  labs(title = "Histogram of Medical School Affiliation",
+       x = "Medical School Affiliation (y/n)",
+       y = "Frequency"
+       )
+
+senic %>%
+  ggplot(mapping = aes(x = X7)) +
+  geom_bar() +
+  labs(title = "Histogram of Geographic Region",
+       x = "Geographic Region (ne, nc, s, w)",
+       y = "Frequency"
+       )
+
+# Summary stats for each numeric variable
+data.frame(
+  Mean = sapply(senic[, -c(7, 8)], mean),
+  SD = sapply(senic[, -c(7, 8)], sd)
+)
+
+# Show relationships between repsonse variable and each explanatory variable
+senic_long %>%
+  ggplot(aes(y = numerical_values, x = Y)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(~ numerical_explanatory_variables, 
+             scales = "free_y", 
+             labeller = labeller(numerical_explanatory_variables = custom_labels)) +
+  labs(title = "Numerical Explanatory Variables by Length of Stay",
+       x = "Length of Stay (days)",
+       y = "Numerical Explanatory Values")
+
+senic_long %>%
+  ggplot(aes(x = Y, y = categorical_values)) +
+  geom_boxplot() +
+  facet_grid(~ categorical_explanatory_variables,
+             labeller = labeller(categorical_explanatory_variables = custom_labels)) +
+  labs(title = "Categorical Explanatory Variables by Length of Stay",
+       x = "Length of Stay (days)",
+       y = "Categorical Explanatory Values")
+```
+
+III. Model Selection: Perform Model Selections based on your own goal of
+prediction or correctness. Report your final linear regression model. Explain your
+model selection procedures and justify how you choose your final model.
+
+```{r Model Selection, echo=FALSE}
+# III. Model Selection
+# Check for multicollinearity between explanatory variables
+full_model <- lm(Y ~ ., data = senic)
+BIC(full_model)
+vif(full_model)
+
+# Since VIF values are high for X5, X8, X9 are high, check correlation between variables
+reduced_data <- senic %>% 
+  dplyr::select(-c(Y, X6, X7))
+corr_matrix = round(cor(reduced_data), 2)
+ggcorrplot(corr_matrix, hc.order = TRUE, type = "lower",
+          lab = TRUE)
+
+# High correlation between X5 and X8, so check the model performance when removing each individually
+reduced_model1 <- lm(Y ~ . - X5, data = senic)
+BIC(reduced_model1)
+
+reduced_model2 <- lm(Y ~ . - X8, data = senic)
+BIC(reduced_model2)
+
+# Model performs better when removing X5, therefore, we remove X5
+# X8 and X9 also have high correlation, therefore, we remove X9
+
+# Perform forward-backward subset selection with reduced set of variables
+full_model <- lm(Y ~ . - X5 - X9, data = senic)
+empty_model <- lm(Y ~ 1, data = senic)
+
+FB_model_BIC <- stepAIC(empty_model,  scope = list(lower = empty_model, upper = full_model), 
+                        k = log(nrow(senic)), trace=FALSE, direction = "both")
+FB_model_BIC$coefficients
+```
+
+IV. Model Diagnostics: Perform diagnostics to check the assumptions. Remove
+outliers, etc. Report your outliers in a table, and the table should go in your
+plot/table appendix. You do not need to consider the transformation of variables
+
+```{r Initial Model Diagnostics, echo=FALSE}
+# IV. Model Diagnostics
+# Pre-outlier removal analysis
+# Recreate model without highly correlated explanatory variables
+selected_model <- lm(Y ~ X1 + X2 + X7 + X8, data = senic)
+summary(selected_model)
+BIC(selected_model)
+
+selected_model %>%
+  ggplot(mapping = aes(x = .fitted, y = Y)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(title = "Fitted Values by Length of Stay",
+       x = "Fitted Values",
+       y = "Length of Stay (days)")
+
+# Create histogram to show residual distribution
+selected_model %>%
+  ggplot(mapping = aes(x = .resid)) +
+  geom_histogram() +
+  labs(title = "Histogram of Residuals",
+       x = "Residuals",
+       y = "Frequency")
+
+# Create QQ plot for residual normality
+selected_model %>%
+  ggplot(mapping = aes(sample = .resid)) +
+  stat_qq() +
+  stat_qq_line() +
+  labs(title = "Normal QQ Plot of Residuals",
+       x = "Theoretical Quantities",
+       y = "Sample Quantities")
+
+# Perform Shapiro-Wilks Test for Normality (Suggests that population is not normal)
+shapiro.test(selected_model$residuals)
+
+# Perform Fligner-Kileen Test for Constant Variance (Suggests population has constant variance)
+group <- rep("Lower", nrow(senic))
+group[senic$Y > median(senic$Y)] = "Upper" 
+group <- as.factor(group) 
+senic$group <- group
+fligner.test(selected_model$residuals, senic$group)
+
+# Check for and plot any outliers
+outliers <- which(abs(selected_model$residuals) > 2.5)
+outliers
+
+selected_model %>%
+  ggplot(mapping = aes(x = .fitted, y = .resid)) +
+  geom_point() +
+  geom_hline(yintercept = 0) +
+  geom_hline(yintercept = c(-2.5, 2.5), linetype = "dashed") +
+  labs(title = "Plot of Residuals w/ Potential Outlier Threshold",
+       x = "Fitted Values",
+       y = "Residuals")
+
+
+# Check for and plot high leverage points
+leverage <- hatvalues(selected_model)
+p <- length(coef(selected_model)) 
+n <- nrow(senic) 
+leverage_threshold <- 2 * p / n
+high_leverage <- which(leverage > leverage_threshold)
+high_leverage
+
+plot(leverage, type = "h", main = "Leverage Values Plot", xlab = "Index", ylab = "Leverage")
+abline(h = leverage_threshold, col = "red", lty = 2)
+
+# Check for and plot influential points
+senic$cooks <- cooks.distance(selected_model)
+cooks_threshold <- p / n 
+influential <- which(senic$cooks > cooks_threshold)
+influential
+
+plot(senic$cooks, type = "h", main = "Cook's Distance Plot", xlab = "Index", ylab = "Cook's Distance")
+abline(h = cooks_threshold, col = "red", lty = 2)
+
+# Remove influential points
+senic_clean <- senic[-influential, ]
+```
+
+```{r Model Diagnostics (Removed Influential Points), echo=FALSE}
+# Post Outlier Removal
+# Refit model on cleaned data and plot
+new_model <- lm(Y ~ X1 + X2 + X7 + X8, data = senic_clean)
+summary(new_model)
+BIC(new_model)
+
+new_model %>%
+  ggplot(mapping = aes(x = .fitted, y = Y)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(title = "Fitted Values by Length of Stay",
+       x = "Fitted Values",
+       y = "Length of Stay (days)")
+
+new_model %>%
+  ggplot(mapping = aes(x = .fitted, y = .resid)) +
+  geom_point() +
+  geom_hline(yintercept = 0) + 
+  labs(title = "Plot of Residuals",
+       x = "Fitted Values",
+       y = "Residuals")
+
+# Create histogram to show residual distribution
+new_model %>%
+  ggplot(mapping = aes(x = .resid)) +
+  geom_histogram() +
+  labs(title = "Histogram of Residuals",
+       x = "Residuals",
+       y = "Frequency")
+
+# Create QQ plot for reisdual normality
+new_model %>%
+  ggplot(mapping = aes(sample = .resid)) +
+  stat_qq() +
+  stat_qq_line() +
+  labs(title = "Normal QQ Plot of Residuals",
+       x = "Theoretical Quantities",
+       y = "Sample Quantities")
+
+# Perform Shapiro-Wilks Test for Normality (Suggests that population is normal)
+shapiro.test(new_model$residuals)
+
+# Perform Fligner-Kileen Test for Constant Variance (Suggests population has constant variance)
+group <- rep("Lower", nrow(senic_clean))
+group[senic_clean$Y > median(senic_clean$Y)] <- "Upper" 
+group <- as.factor(group) 
+senic_clean$group <- group
+fligner.test(new_model$residuals, senic_clean$group)
+```
+
+```{r Confidence Intervals and Hypothesis Tests, echo=FALSE}
+# Confidence Intervals and Hypothesis Tests
+# Find best multiplies for multiple CI
+mult.fun <- function(n, p, g, alpha){
+  bon = qt(1 - alpha / (2 * g), n - p)
+  WH = sqrt(p * qf(1 - alpha, p, n - p))
+  all.mul = c(bon, WH)
+  all.mul = round(all.mul, 3)
+  names(all.mul) = c("Bon", "WH")
+  return(all.mul)
+}
+
+multipliers <- mult.fun(nrow(senic_clean), length(new_model$coefficients), 7, 0.05)
+multipliers
+
+coefs <- coef(summary(new_model))
+
+# Find multiple CI's using bonferroni
+data.frame(
+  Estimate = coefs[, "Estimate"],
+  Lower = coefs[, "Estimate"] - multipliers[1] * coefs[, "Std. Error"],
+  Upper = coefs[, "Estimate"] + multipliers[1] * coefs[, "Std. Error"]
+)
+
+full_model <- lm(Y ~ . - group - cooks, data = senic_clean)
+anova(new_model, full_model)
+# General Linear Test
+# Null Hypothesis: B3 = B4 = B5 = B6(Yes) = B9 = B10 = 0 (Reduced Model Fits Better)
+# Alternative Hypothesis: At least 1 Bi =/ 0, i = 3, 4, 5, 6, 9, 10 (Full Model Fits Better)
+# F stat: 1.0187
+# P-value: 0.418
+# Since the p-value is 0.418 > alpha = 0.05, we fail to reject the null hypothesis and 
+# conclude that the reduced model fits the data better than the full model.
+```
+
+V. Analysis and Interpretation: Based on a dataset without outliers, report back to
+your final model, confidence interval, test statistics, p-values, nulls and
+alternatives, etc. You may use tables to report those values to organize your
+work, and the tables should go in your plot/table appendix. Remember to write
+your results in full sentences where possible. State your conclusion and
+inference that you may draw from your corresponding tests or confidence
+intervals. These should all be in terms of your problem.
+
+VI. Conclusion: Summary briefly of your findings. You do not have to re-iterate your
+numeric values here but summarize all relevant findings. State one limitation of
+your final model and one suggestion you could make your final model perform
+better.
+
+# R Appendix
+```{r, ref.label=knitr::all_labels(), eval = F, echo = T}
+tinytex::install_tinytex()
+```
